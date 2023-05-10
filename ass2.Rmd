@@ -1,0 +1,107 @@
+---
+title: "Assignment2"
+output: html_document
+date: "2023-05-02"
+---
+
+# FIT3152 Assignment 2
+
+##### Name : Ryan Koh Wai Leong
+
+##### ID : 32245181
+
+```{r}
+#loading necessary libraries
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+```
+
+```{r}
+rm(list = ls())
+WAUS <- read.csv("HumidPredict2023D.csv")
+L <- as.data.frame(c(1:49))
+set.seed(32245181) # Your Student ID is the random seed
+L <- L[sample(nrow(L), 45, replace = FALSE),] # sample 45 locations
+WAUS <- WAUS[(WAUS$Location %in% L),]
+WAUS <- WAUS[sample(nrow(WAUS),90000, replace = FALSE),] # sample 90000 rows
+```
+
+```{r}
+WAUS <- na.omit(WAUS)
+```
+
+```{r}
+str(WAUS)
+```
+
+```{r}
+head(WAUS)
+```
+
+## Question 1
+
+##### Proportion of days when it is more humid to days when it is less humid
+
+```{r}
+humid_prop <- WAUS %>% group_by(MHT) %>% summarise(total = n(), .groups  = 'drop')
+
+humid_prop$MHT <- as.factor(humid_prop$MHT)
+
+ggplot(humid_prop, aes(x = MHT, y = total, fill = MHT)) + geom_bar(stat = 'identity', width = 0.3) +  geom_text(aes(label=total), position=position_dodge(width=0.9), vjust=-0.25) + labs(title = 'Proportion of Days More Humid to Less Humid', x = 'Humidity', y = 'Total observations')  + scale_x_discrete(labels = c('Less Humid','More Humid')) + scale_fill_discrete(labels = c('Less Humid','More Humid'))
+```
+
+Investigating the Minimum and Maximum Temperature
+
+```{r}
+min_max <- subset(WAUS, select = c(MinTemp, MaxTemp))
+
+summary(min_max)
+
+min_max = melt(min_max)
+
+ggplot(min_max, aes(x = variable, y = value, fill = variable)) + geom_boxplot(width = 0.7) 
+```
+
+Investigating the Rainfall
+
+```{r}
+rainfall <- as.data.frame(subset(WAUS, select = c(Rainfall,Location)))
+
+
+
+rainfall <- rainfall %>% group_by(Location) %>% summarise_at(vars(Rainfall),list(mean = mean,sd = sd))
+
+rainfall$Location <- as.factor(rainfall$Location)
+
+ggplot(rainfall, aes(x = Location, y = mean, fill = 'red')) + geom_bar(stat = 'identity') + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9))+ guides(fill="none") + labs(title = 'Average Rainfall by Location', y = 'Average Rainfall for the day in mm', x = 'Location')
+```
+
+Investigating the Evaporation
+
+```{r}
+evaporation <- subset(WAUS, select = c(Evaporation,Location))
+
+evaporation <- evaporation %>% group_by(Location) %>% summarise_at(vars(Evaporation),list(mean = mean, sd = sd))
+
+evaporation$Location <- as.factor(evaporation$Location)
+
+ggplot(evaporation, aes(x = Location, y = mean, fill = 'red')) + geom_bar(stat = 'identity', width = 0.7) + guides(fill="none")  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9))
+```
+
+Investigating the Sunshine
+
+## Question 2
+
+All rows that have NA entries in any of the columns should be removed.
+
+## Question 3
+
+```{r}
+set.seed(32245181) #Student ID as random seed 
+train.row = sample(1:nrow(WAUS), 0.7*nrow(WAUS))
+WAUS.train = WAUS[train.row,]
+WAUS.test = WAUS[-train.row,]
+```
+
+## 
