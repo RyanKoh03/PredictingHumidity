@@ -15,20 +15,40 @@ date: "2023-05-02"
 library(dplyr)
 library(ggplot2)
 library(reshape2)
+library(tree)
+library(e1071)
+library(ROCR)
+library(pROC)
+library(randomForest)
+library(adabag)
+library(rpart)
+library(doParallel)
+library(iterators)
+library(parallel)
+library(lattice)
 ```
 
 ```{r}
+#generating the data
 rm(list = ls())
 WAUS <- read.csv("HumidPredict2023D.csv")
 L <- as.data.frame(c(1:49))
 set.seed(32245181) # Your Student ID is the random seed
-L <- L[sample(nrow(L), 45, replace = FALSE),] # sample 45 locations
+L <- L[sample(nrow(L), 10, replace = FALSE),] # sample 10 locations
 WAUS <- WAUS[(WAUS$Location %in% L),]
-WAUS <- WAUS[sample(nrow(WAUS),90000, replace = FALSE),] # sample 90000 rows
+WAUS <- WAUS[sample(nrow(WAUS), 2000, replace = FALSE),] # sample 2000 rows
 ```
 
 ```{r}
+#removing all NAs in the data
 WAUS <- na.omit(WAUS)
+
+#changing all categorical variables to factors
+WAUS$MHT <- as.factor(WAUS$MHT)
+WAUS$WindDir3pm <- as.factor(WAUS$WindDir3pm)
+WAUS$WindDir9am <- as.factor(WAUS$WindDir9am)
+WAUS$WindGustDir <- as.factor(WAUS$WindGustDir)
+WAUS$RainToday <- as.factor(WAUS$RainToday)
 ```
 
 ```{r}
@@ -41,61 +61,149 @@ head(WAUS)
 
 ## Question 1
 
-##### Proportion of days when it is more humid to days when it is less humid
+#### Proportion of days when it is more humid to days when it is less humid
 
 ```{r}
 humid_prop <- WAUS %>% group_by(MHT) %>% summarise(total = n(), .groups  = 'drop')
 
-humid_prop$MHT <- as.factor(humid_prop$MHT)
-
-ggplot(humid_prop, aes(x = MHT, y = total, fill = MHT)) + geom_bar(stat = 'identity', width = 0.3) +  geom_text(aes(label=total), position=position_dodge(width=0.9), vjust=-0.25) + labs(title = 'Proportion of Days More Humid to Less Humid', x = 'Humidity', y = 'Total observations')  + scale_x_discrete(labels = c('Less Humid','More Humid')) + scale_fill_discrete(labels = c('Less Humid','More Humid'))
+ggplot(humid_prop, aes(x = MHT, y = total, fill = MHT)) + geom_bar(stat = 'identity', width = 0.3) + geom_text(aes(label=total), position=position_dodge(width=0.9), vjust=-0.25) + labs(title = 'Proportion of Days More Humid to Less Humid', x = 'Humidity', y = 'Total observations')  + scale_x_discrete(labels = c('Less Humid','More Humid')) + scale_fill_discrete(labels = c('Less Humid','More Humid'))
 ```
 
-Investigating the Minimum and Maximum Temperature
+Referring to the bar chart above, we can see that there are 42 more less humid days than there are more humid days. The ratio of less humid to more humid days is 78:71 days.
+
+#### Investigating Minimum and Maximum Temperature
 
 ```{r}
-min_max <- subset(WAUS, select = c(MinTemp, MaxTemp))
+#getting the min and max temp column
+min_max <- as.data.frame(subset(WAUS, select = c(MinTemp, MaxTemp)))
 
-summary(min_max)
+#getting the mean and standard deviation
+max_temp <- min_max %>% summarise_at(vars(MaxTemp),list(mean = mean, sd = sd))
+min_temp <- min_max %>% summarise_at(vars(MinTemp),list(mean = mean, sd = sd))
+min_temp$name <- c('MinTemp')
+max_temp$name <- c('MaxTemp')
 
-min_max = melt(min_max)
+#combining both min and max temperature
+min_max <- rbind(max_temp,min_temp)
 
-ggplot(min_max, aes(x = variable, y = value, fill = variable)) + geom_boxplot(width = 0.7) 
+#plotting the temperature
+ggplot(min_max, aes(x = name, y = mean, fill = name, color = 'red')) + geom_point(shape = 15) + geom_errorbar(aes(ymin= mean-sd, ymax=mean+sd), width=.2,position=position_dodge(.9))+ guides(fill="none")  + guides(color = 'none')
 ```
 
-Investigating the Rainfall
+As seen above, the mean MaxTemp is 25.0 and the mean MinTemp is 14.1 . The standard deviation for MaxTemp is 7.23 and the standard deviation for MinTemp is 6.88
 
 ```{r}
-rainfall <- as.data.frame(subset(WAUS, select = c(Rainfall,Location)))
-
-
-
-rainfall <- rainfall %>% group_by(Location) %>% summarise_at(vars(Rainfall),list(mean = mean,sd = sd))
-
-rainfall$Location <- as.factor(rainfall$Location)
-
-ggplot(rainfall, aes(x = Location, y = mean, fill = 'red')) + geom_bar(stat = 'identity') + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9))+ guides(fill="none") + labs(title = 'Average Rainfall by Location', y = 'Average Rainfall for the day in mm', x = 'Location')
+#function to calculate the mean and standard deviation
+mean_sd <- function(dataframe, colname){
+  mean_sd <- dataframe %>% summarise_at(vars(colname),list(mean=mean,sd=sd))
+  mean_sd <- signif(mean_sd,3)
+  mean_sd$name <- c(colname)
+  return (mean_sd)
+}
 ```
 
-Investigating the Evaporation
+#### Investigating the Rainfall, Evaporation and Sunshine
 
 ```{r}
-evaporation <- subset(WAUS, select = c(Evaporation,Location))
+rain_eva_sun <- as.data.frame(subset(WAUS, select = c(Rainfall,Evaporation,Sunshine)))
 
-evaporation <- evaporation %>% group_by(Location) %>% summarise_at(vars(Evaporation),list(mean = mean, sd = sd))
+#getting the rainfall, evaporation and sunshine mean and std dev
+rainfall <- mean_sd(rain_eva_sun,'Rainfall')
+evaporation <- mean_sd(rain_eva_sun,'Evaporation')
+sunshine <- mean_sd(rain_eva_sun,'Sunshine')
 
-evaporation$Location <- as.factor(evaporation$Location)
+rain_eva_sun <- rbind(evaporation,rainfall,sunshine)
 
-ggplot(evaporation, aes(x = Location, y = mean, fill = 'red')) + geom_bar(stat = 'identity', width = 0.7) + guides(fill="none")  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9))
+
+ggplot(rain_eva_sun, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.3)  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Rainfall,Evaporation and Sunshine', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(Rainfall = "Rainfall in mm",Evaporation = "Evaporation in mm",Sunshine = 'Hours of bright Sunshine over the day') )) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
 ```
 
-Investigating the Sunshine
+Referring to the chart above,
+
+The average rainfall in a day is 1.87 mm with a standard deviation of 6.03.
+
+The mean evaporation in a day is 5.47mm with a standard deviation of 3.21
+
+The mean hours of sunshine in a day is 7.68 hours with a standard deviation of 3.74
+
+#### Investigating the Wind Speed
+
+```{r}
+wind <- subset(WAUS, select = c(WindGustSpeed,WindSpeed9am,WindSpeed3pm))
+
+wind_gust <- mean_sd(wind,'WindGustSpeed')
+wind_am <- mean_sd(wind,'WindSpeed9am')
+wind_pm <- mean_sd(wind,'WindSpeed3pm')
+
+wind <- rbind(wind_gust,wind_am,wind_pm)
+
+ggplot(wind, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Wind', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(WindGustSpeed = "Speed (km/h)",WindSpeed3pm = "Speed (km/hr) averaged over 10 minutes prior to 3pm.",WindSpeed9am = 'Speed (km/hr) averaged over 10 minutes prior to 9am') )) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
+```
+
+#### Investigating the Atmospheric Pressure
+
+```{r}
+pressure<- subset(WAUS, select = c(Pressure9am, Pressure3pm))
+
+pressure_am <- mean_sd(pressure,'Pressure9am')
+pressure_pm <- mean_sd(pressure,'Pressure3pm')
+
+pressure <- rbind(pressure_am,pressure_pm)
+
+ggplot(pressure, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean-sd, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Presure', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(Pressure9am = "Atmospheric pressure (hpa) reduced 
+to mean sea level at 9am.",Pressure3pm = "Atmospheric pressure (hpa) reduced to mean sea level at 3pm"))) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
+```
+
+As seen above,
+
+The mean atmospheric pressure reduced to mean sea level at 3 pm is 1010 hpa with a standard deviation of 6.80 hpa.
+
+The mean atmospheric pressure reduced to mean sea level at 9am is 1020 hpa with a standard deviation of 6.87 hpa.
+
+#### Investigating the fraction of sky obscured by cloud.
+
+```{r}
+cloud <- subset(WAUS, select = c(Cloud9am, Cloud3pm))
+cloud_am <- mean_sd(cloud,'Cloud9am')
+cloud_pm <- mean_sd(cloud,'Cloud3pm')
+
+cloud <- rbind(cloud_am,cloud_pm)
+
+ggplot(cloud, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation fraction of sky obscured by clouds', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(Cloud9am = "Fraction of sky obscured by cloud at 9am (oktas)",Cloud3pm = "Fraction of sky obscured by cloud at 3pm (oktas)"))) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
+```
+
+Referring to the chart above,
+
+The fraction of the sky obscured by clouds at 3pm has a mean value of 4.44 oktas with a standard deviation of 2.63 oktas.
+
+The fraction of the sky obscured by clouds at 9am has a mean value of 4.31 oktas with a standard deviation of 2.79 oktas.
+
+#### Investigating the Temperature at different times
+
+```{r}
+temp <- subset(WAUS, select = c(Temp9am, Temp3pm))
+
+temp_am <- mean_sd(temp,'Temp9am')
+temp_pm <- mean_sd(temp,'Temp3pm')
+
+temp <- rbind(temp_am,temp_pm)
+
+ggplot(temp, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Temperature at 9am/3pm', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(Temp9am = "Temperature (degrees C) at 9am",Temp3pm = "Temperature (degrees C) at 3pm."))) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
+```
+
+As seen above,
+
+The mean temperature at 3 pm is 23.5 degrees C with a standard deviation of 7.03 degrees C.
+
+The mean temperature at 9am is 18.5 degrees C with a standard deviation of 7.09 degrees C.
 
 ## Question 2
 
-All rows that have NA entries in any of the columns should be removed.
+All rows that have NA entries in any of the columns should be removed. This is to ensure data is consistent.
 
 ## Question 3
+
+#### Dividing data into training and testing data sets.
 
 ```{r}
 set.seed(32245181) #Student ID as random seed 
@@ -104,4 +212,45 @@ WAUS.train = WAUS[train.row,]
 WAUS.test = WAUS[-train.row,]
 ```
 
-## 
+## Question 4
+
+#### Fitting the testing data to a decision tree
+
+```{r}
+decision <- tree(MHT~.-Year,data = WAUS.train)
+plot(decision)
+text(decision,pretty= 0)
+summary(decision)
+```
+
+#### Fitting the test data to a Naive Bayes model
+
+```{r}
+naive <- naiveBayes(MHT~.-Year,data = WAUS.train)
+```
+
+#### Fitting the test data to a Random Forest model
+
+```{r}
+rand_for <- randomForest(formula = MHT~.-Year, data  = WAUS.train)
+plot(rand_for)
+```
+
+#### Fitting the data to a decision tree with bagging
+
+## Question 5
+
+#### Testing the Decision Tree model using the testing data set
+
+```{r}
+pred_dec <- predict(decision,WAUS.test,type = 'class')
+table(observed = WAUS.test$MHT , predicted = pred_dec)
+```
+
+#### Testing the Naive Bayes classification model using the testing data set
+
+```{r}
+pred_naive <- predict(naive,WAUS.test)
+pred_naive_confidence <- predict(naive,WAUS.test,type = 'raw')
+table(observed = WAUS.test$MHT, predicted = pred_naive)
+```
