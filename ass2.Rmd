@@ -26,6 +26,7 @@ library(doParallel)
 library(iterators)
 library(parallel)
 library(lattice)
+#library(ipred)
 ```
 
 ```{r}
@@ -49,6 +50,7 @@ WAUS$WindDir3pm <- as.factor(WAUS$WindDir3pm)
 WAUS$WindDir9am <- as.factor(WAUS$WindDir9am)
 WAUS$WindGustDir <- as.factor(WAUS$WindGustDir)
 WAUS$RainToday <- as.factor(WAUS$RainToday)
+WAUS$Location <- as.factor(WAUS$Location)
 ```
 
 ```{r}
@@ -214,43 +216,317 @@ WAUS.test = WAUS[-train.row,]
 
 ## Question 4
 
-#### Fitting the testing data to a decision tree
+#### Fitting the training data to a decision tree
 
 ```{r}
+set.seed(32245181)
+#fitting to a decision tree
 decision <- tree(MHT~.-Year,data = WAUS.train)
 plot(decision)
 text(decision,pretty= 0)
 summary(decision)
 ```
 
-#### Fitting the test data to a Naive Bayes model
+#### Fitting the training data to a Naive Bayes model
 
 ```{r}
+set.seed(32245181)
 naive <- naiveBayes(MHT~.-Year,data = WAUS.train)
 ```
 
-#### Fitting the test data to a Random Forest model
+#### Fitting the training data to a Random Forest model
 
 ```{r}
+set.seed(32245181)
 rand_for <- randomForest(formula = MHT~.-Year, data  = WAUS.train)
-plot(rand_for)
 ```
 
-#### Fitting the data to a decision tree with bagging
+#### Fitting the training data to a decision tree with bagging method
+
+```{r}
+set.seed(32245181)
+sub <- c(sample(1:125,63),sample(126:250,63),sample(251:375,63),sample(376:500,63),sample(501:625,63))
+```
+
+```{r}
+set.seed(32245181)
+#ada bag
+bag <- bagging(MHT~.-Year,data = WAUS.train[sub,],mfinal = 100)
+plot(bag$trees[[1]]); text(bag$trees[[1]], pretty = 0)
+
+#ipred
+#bag <- bagging(formula = MHT ~. -Year, data = WAUS.train, nbagg  = 150, coob = TRUE, control = rpart.control(minsplit = 2, cp = 0))
+```
+
+#### Fitting the training data with boosting method
+
+```{r}
+set.seed(32245181)
+par(xpd = NA)
+boost <- boosting(MHT~.-Year,data = WAUS.train[sub,],mfinal = 100)
+plot(boost$trees[[1]]); text(boost$trees[[1]], pretty = 0) 
+```
 
 ## Question 5
+
+```{r}
+#function to calculate the true and false positive rate
+tpr_fpr <- function(predictor){
+  retpred <- prediction(predictor[,2],WAUS.test$MHT)
+  retperf <- performance(retpred,"tpr","fpr")
+  return(retperf)
+}
+```
 
 #### Testing the Decision Tree model using the testing data set
 
 ```{r}
 pred_dec <- predict(decision,WAUS.test,type = 'class')
-table(observed = WAUS.test$MHT , predicted = pred_dec)
+dec_mat <- confusionMatrix(WAUS.test$MHT,pred_dec)
+dec_mat
 ```
+
+As seen by the confusion matrix above, we can see that the Decision Tree model has an accuracy of 0.532 with a True Positive Rate of 0.600 and a False Positive Rate of 0.509
 
 #### Testing the Naive Bayes classification model using the testing data set
 
 ```{r}
 pred_naive <- predict(naive,WAUS.test)
-pred_naive_confidence <- predict(naive,WAUS.test,type = 'raw')
-table(observed = WAUS.test$MHT, predicted = pred_naive)
+naive_mat <- confusionMatrix(WAUS.test$MHT,pred_naive)
+naive_mat
+```
+
+As seen above, we can see that the Naive Bayes classification model has an accuracy of 0.587, which is slightly higher than the pruned Decision Tree model above. This model has a True Positive Rate of 0.640 and a False Positive Rate of 0.458
+
+#### Testing the Random Forest model using the testing data set
+
+```{r}
+pred_rand <- predict(rand_for,WAUS.test)
+rand_mat <- confusionMatrix(WAUS.test$MHT,pred_rand)
+rand_mat
+```
+
+Referring to the confusion matrix, we can see that the Random Forest classification model has an accuracy of 0.587 which is higher than the Naive Bayes and Decision Tree model. It has a True Positive Rate of 0.647 and a False Positive Rate of 0.460.
+
+#### Testing the Bagging classifier using the testing data set
+
+```{r}
+pred_bag <- predict.bagging(bag,WAUS.test)
+
+pred_bag_val <- pred_bag$class
+pred_bag_val <- as.factor(pred_bag_val)
+
+bag_mat <- confusionMatrix(WAUS.test$MHT,pred_bag_val)
+bag_mat
+```
+
+As seen above, we can see that the Bagging Method classifier has an accuracy of 0.543. It has a True Positive Rate of 0.589 and a False Positive Rate of 0.500.
+
+#### Testing the Boosting classifier using the testing data set
+
+```{r}
+pred_boost <- predict.boosting(boost,newdata = WAUS.test)
+
+pred_boost_val <- pred_boost$class
+pred_boost_val <- as.factor(pred_boost_val)
+
+boost_mat <- confusionMatrix(WAUS.test$MHT, pred_boost_val)
+boost_mat
+```
+
+Referring to the confusion matrix above, we can see that the Boosting method classifier has an accuracy of 0.561. It has a True Positive Rate of 0.609 and a False Positive Rate of 0.482.
+
+## Question 6
+
+#### Constructing the ROC curve and calculating the AUC for all classifiers
+
+```{r}
+dec.r <- predict(decision,WAUS.test,type = 'vector')
+
+naive.r <- predict(naive,WAUS.test,type = 'raw')
+
+rand.r <- predict(rand_for,WAUS.test,type = 'prob')
+
+bag.r <- prediction(pred_bag$prob[,2], WAUS.test$MHT)
+
+boost.r <- prediction(pred_boost$prob[,2], WAUS.test$MHT)
+```
+
+```{r}
+roc(WAUS.test$MHT,naive.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for each classifier",col = 'blue',lwd = 2,print.auc = TRUE)
+plot.roc(WAUS.test$MHT,rand.r[,2],percent = TRUE, col = '#4daf4a',lwd = 2,print.auc = TRUE, add = TRUE,print.auc.y = 40 )
+plot.roc(WAUS.test$MHT,dec.r[,2],percent = TRUE, col = 'red', lwd =2, print.auc = TRUE, add = TRUE, print.auc.y = 30)
+plot.roc(WAUS.test$MHT, pred_bag$prob[,2], percent = TRUE, col = 'purple', lwd = 2, print.auc = TRUE, add = TRUE, print.auc.y = 20)
+plot.roc(WAUS.test$MHT, pred_boost$prob[,2], percent = TRUE, col = '#FFC300', lwd = 2, print.auc = TRUE, add = TRUE, print.auc.y = 10)
+legend("bottomright",legend = c("Naive Bayes","Random Forest", "Decision Tree","Bagging","Boosting"), col = c("blue","#4daf4a",'red','purple','#FFC300'), lwd = 2)
+```
+
+## Question 7
+
+#### Creating a table with all the performance metrics for each classifier
+
+```{r}
+names <- c('Decision Tree','Naive Bayes', 'Random Forest', 'Bagging','Boosting')
+
+tpr <- c(dec_mat$byClass[1],naive_mat$byClass[1],rand_mat$byClass[1],bag_mat$byClass[1],boost_mat$byClass[1])
+tpr <- signif(tpr,3)
+
+fpr <- c(0.509,0.458,0.460,0.500,0.482)
+
+acc <- c(dec_mat$overall[1],naive_mat$overall[1],rand_mat$overall[1],bag_mat$overall[1],boost_mat$overall[1])
+acc <- signif(acc,3)
+
+auc <- c(0.538,0.582,0.632,0.583,0.578)
+
+overall <- data.frame(names,tpr,fpr,acc,auc)
+
+names(overall) <- c("Classifier","True Positive Rate", "False Positive Rate", "Accuracy","AUC")
+
+overall
+```
+
+When comparing the performance metrics, we can see that the Random Forest Classifier could be the one 'best' classifier as it has the highest Accuracy, AUC and True Positive Rate. It also has the second lowest False Positive Rate (difference of 0.02 with the smallest) of all the classifiers.
+
+## Question 8
+
+```{r}
+cat("Decision Tree Important Attributes\n")
+print(summary(decision))
+```
+
+Referring to the summary() function above, we can see that the variables used in the Decision Tree classifier model are Rainfall, WindDir3pm, Cloud3pm, WindGustDir, Location, WindDir9am, MinTemp and Pressure9am.
+
+```{r}
+varImpPlot(rand_for,main = "Random Forest important variables")
+```
+
+Referring to the importance plot above, we can see that the most important variables in the Random Forest Classifier are WindDir3pm, WindDir9am and WindGustDir.
+
+```{r}
+bag_res <- as.data.frame(bag$importance)
+ggplot(bag_res,aes(x = rownames(bag_res), y = `bag$importance`, fill = rownames(bag_res))) + geom_bar(stat = 'identity') + labs(title = "Importance of variables in bagging method", x = "Variables", y  = "Importance") + guides(fill = 'none') + coord_flip()
+```
+
+Similar to what we saw in the Random Forest variable importance plot, we can see that WindDir3pm, WindDir9am and WindGustDir are important variables for predicting whether it will be humid tomorrow or not.
+
+```{r}
+boost_res <- as.data.frame(boost$importance)
+ggplot(boost_res,aes(x = rownames(boost_res), y = `boost$importance`, fill = rownames(boost_res))) + geom_bar(stat = 'identity') + labs(title = "Importance of variables in boosting method", x = "Variables", y  = "Importance") + guides(fill = 'none') + coord_flip()
+```
+
+We begin to see a pattern as WindDir3pm, WinDir9am and WindGustDir are also important variables for predicting whether it will be humid tomorrow or not in the Boosting method classifier.
+
+To summarize, we can see that overall WindDir3pm, WindDir9am and WindGustDir are important variables for predicting whether it will be humid tomorrow or not. Furthermore, the RainToday variable can be omitted from the data with little to no effect on performance. This is supported by the fact that this variable is not used in the Decision Tree classifier and has an importance of 0 in the Random Forest, Boosting and Bagging classifiers.
+
+## Question 9
+
+#### Selection of classifier and the factors involved.
+
+I chose to use the Decision Tree Classifier from question 4.
+
+Since simplicity is the objective of this question, I chose the Decision Tree classifier as it is the easiest for a person to classify by hand.
+
+I chose to use WindDir3pm, WindDir9am and WindGustDir in my model. Referring to Question 8 above, we can see that these three variables are the most important variables for predicting if it will be humid tomorrow or not.
+
+```{r}
+set.seed(32245181)
+decision_simple <- tree(MHT ~ WindDir3pm + WindDir9am + WindGustDir, data = WAUS.train)
+simple_pred <- predict(decision_simple,WAUS.test,type = "class")
+simple_mat <- confusionMatrix(WAUS.test$MHT,simple_pred)
+plot(decision_simple)
+text(decision_simple, pretty = 0)
+```
+
+Referring to the plot above, we can interpret the Decision Tree's terminal nodes as follows starting from the leftmost terminal node.
+
+It is predicted to be less humid tomorrow than today (MHT = 0) when the Wind Direction at 3pm (WindDir3pm) is from the East South East, North East, North North East, South, South East, South South East, South West or West South West direction and the Strongest Gust of Wind over the day (WindGustDir) is from the East, East North East, North North East, North North West, South, South South East or South West direction and the Wind Direction at 3 pm is from the South West Direction.
+
+It is predicted to be less humid tomorrow than today (MHT = 0) when the Wind Direction at 3pm (WindDir3pm) is from the East South East, North East, North North East, South, South East, South South East, South West or West South West direction and the Strongest Gust of Wind over the day (WindGustDir) is from the East, East North East, North North East, North North West, South, South South East or South West direction and the Wind Direction at 3 pm is not from the South West Direction.
+
+It is predicted to be less humid tomorrow than today (MHT = 0) when the Wind Direction at 3pm (WindDir3pm) is from the East South East, North East, North North East, South, South East, South South East, South West or West South West direction and the Strongest Gust of Wind over the day (WindGustDir) is not from the East, East North East, North North East, North North West, South, South South East or South West direction.
+
+It is predicted to be more humid tomorrow than today (MHT = 1) when the Wind Direction at 3pm (WindDir3pm) is not from the East South East, North East, North North East, South, South East, South South East, South West or West South West direction.
+
+```{r}
+simple_mat
+```
+
+Referring to the confusion matrix above, we can see that this Decision Tree classifier has a accuracy of 0.487 and a True Positive Rate of 0.531 and a False Positive Rate of 0.554.
+
+#### ROC and AUC for this simple classifier
+
+```{r}
+simple.r = predict(decision_simple,WAUS.test,type = "vector")
+
+roc(WAUS.test$MHT,simple.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for Decision Tree",col = 'blue',lwd = 2,print.auc = TRUE,print.auc.y = 30)
+
+legend("bottomright",legend = c("Decision Tree"), col = c("blue"), lwd = 2)
+```
+
+Referring to the ROC plot above, we can see that the ROC curve for this Decision Tree has an AUC of 47.9%. This means that the model performs less than adequate.
+
+#### Compiling data into a table
+
+```{r}
+simple_data <- c(Classifier = "Simple Decision Tree", `True Postive Rate` = 0.531, `False Positive Rate` = 0.554, Accuracy = 0.487, AUC = 0.479)
+
+overall <- rbind(overall,simple_data)
+
+overall
+```
+
+When comparing the simple Decision Tree classifier created in Question 9 to the rest of the classifiers made in the earlier questions, we can see that the Simple Decision Tree has the worst performance overall. It has the lowest AUC, accuracy and True Positive Rate. It has the highest False Positive Rate as well. This could be because the model is too simple and could be caused by under-fitting.\
+
+## Question 10
+
+To make the best tree-based classifier, I chose the Random Forest classifier because it is the best performing tree based model as seen in the earlier questions.
+
+Before implementing any changes, let's review the performance metrics of the current Random Forest model
+
+```{r}
+print(filter(overall, Classifier == "Random Forest"))
+```
+
+Now let's improve our Random Forest model
+
+```{r}
+set.seed(32245181)
+new_rand <- randomForest(MHT~.-Year-RainToday, data = WAUS.train, ntree = 100)
+
+new_pred <- predict(new_rand,WAUS.test)
+
+newr_mat <- confusionMatrix(WAUS.test$MHT,new_pred)
+
+newr_mat
+```
+
+#### Plotting the ROC and calculating the AUC for our improved Random Forest classifier.
+
+```{r}
+newrand.r = predict(new_rand,WAUS.test,type = "prob")
+
+roc(WAUS.test$MHT,newrand.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for Improved Random Forest",col = 'darkgreen',lwd = 2,print.auc = TRUE,print.auc.y = 30)
+
+legend("bottomright",legend = c("Improved Random Forest"), col = c("darkgreen"), lwd = 2)
+
+```
+
+Now let's compare this improved Random Forest classifier to the earlier classifiers.
+
+```{r}
+new_rand_data <- c(Classifier = "Improved Random Forest", `True Postive Rate` = 0.679, `False Positive Rate` = 0.446, Accuracy = 0.606, AUC = 0.633)
+overall <- rbind(overall,new_rand_data)
+overall
+```
+
+Referring to the table above, we can see that the improved Random Forest Classifier has the best performance metrics overall. It has the highest True Positive Rate, Accuracy and AUC. It also has the lowest False Positive Rate.
+
+Since we discovered that the RainToday variable can be removed due to lack of significance, it was not included in the improved Random Forest classifier. I also discovered that the RainToday variable significantly decreases accuracy if it is included in the formula for this model.
+
+To create the improved Random Forest classifier, the number of trees produced was reduced from 500 to 100. I discovered that since increasing number of trees will decrease variance which might lead to under-fitting. Therefore, I used less trees than the earlier Random Forest model to prevent under-fitting.
+
+## Question 11
+
+```{r}
+
 ```
