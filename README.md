@@ -1,2 +1,2 @@
 # PredictingHumidity
-A report on using different categorical predictors to predict humidity
+A report on using different classifiers to predict humidity
