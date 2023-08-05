@@ -10,7 +10,7 @@ date: "2023-05-02"
 
 ##### ID : 32245181
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 #loading necessary libraries
 library(dplyr)
 library(ggplot2)
@@ -26,7 +26,6 @@ library(doParallel)
 library(iterators)
 library(parallel)
 library(lattice)
-#library(ipred)
 ```
 
 ```{r}
@@ -38,6 +37,7 @@ set.seed(32245181) # Your Student ID is the random seed
 L <- L[sample(nrow(L), 10, replace = FALSE),] # sample 10 locations
 WAUS <- WAUS[(WAUS$Location %in% L),]
 WAUS <- WAUS[sample(nrow(WAUS), 2000, replace = FALSE),] # sample 2000 rows
+
 ```
 
 ```{r}
@@ -92,7 +92,7 @@ min_max <- rbind(max_temp,min_temp)
 ggplot(min_max, aes(x = name, y = mean, fill = name, color = 'red')) + geom_point(shape = 15) + geom_errorbar(aes(ymin= mean-sd, ymax=mean+sd), width=.2,position=position_dodge(.9))+ guides(fill="none")  + guides(color = 'none')
 ```
 
-As seen above, the mean MaxTemp is 25.0 and the mean MinTemp is 14.1 . The standard deviation for MaxTemp is 7.23 and the standard deviation for MinTemp is 6.88
+As seen above, the mean MaxTemp is 25.0 degrees Celsius and the mean MinTemp is 14.1 degrees Celsius. The standard deviation for MaxTemp is 7.23 degrees Celsius and the standard deviation for MinTemp is 6.88 degrees Celsius.
 
 ```{r}
 #function to calculate the mean and standard deviation
@@ -106,7 +106,7 @@ mean_sd <- function(dataframe, colname){
 
 #### Investigating the Rainfall, Evaporation and Sunshine
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 rain_eva_sun <- as.data.frame(subset(WAUS, select = c(Rainfall,Evaporation,Sunshine)))
 
 #getting the rainfall, evaporation and sunshine mean and std dev
@@ -122,7 +122,7 @@ ggplot(rain_eva_sun, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'ide
 
 Referring to the chart above,
 
-The average rainfall in a day is 1.87 mm with a standard deviation of 6.03.
+The mean rainfall in a day is 1.87 mm with a standard deviation of 6.03.
 
 The mean evaporation in a day is 5.47mm with a standard deviation of 3.21
 
@@ -130,7 +130,7 @@ The mean hours of sunshine in a day is 7.68 hours with a standard deviation of 3
 
 #### Investigating the Wind Speed
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 wind <- subset(WAUS, select = c(WindGustSpeed,WindSpeed9am,WindSpeed3pm))
 
 wind_gust <- mean_sd(wind,'WindGustSpeed')
@@ -139,8 +139,16 @@ wind_pm <- mean_sd(wind,'WindSpeed3pm')
 
 wind <- rbind(wind_gust,wind_am,wind_pm)
 
-ggplot(wind, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Wind', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(WindGustSpeed = "Speed (km/h)",WindSpeed3pm = "Speed (km/hr) averaged over 10 minutes prior to 3pm.",WindSpeed9am = 'Speed (km/hr) averaged over 10 minutes prior to 9am') )) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
+ggplot(wind, aes(x = name, y = mean, fill = name)) + geom_bar(stat= 'identity', width = 0.2) + geom_text(aes(label=mean), position=position_dodge(width=0.9), vjust=-0.5, hjust = -0.2)  + geom_errorbar(aes(ymin= mean-sd, ymax=mean+sd), width=.2,position=position_dodge(.9)) +  labs(title = 'Mean and Standard Deviation of Wind', x = 'Variable', fill = 'Variable') + facet_wrap(~name,scales = 'free', strip.position = "left", labeller = as_labeller(c(WindGustSpeed = "Speed (km/h)",WindSpeed3pm = "Speed (km/hr) averaged over 10 minutes prior to 3pm.",WindSpeed9am = 'Speed (km/hr) averaged over 10 minutes prior to 9am') )) + ylab(NULL) + theme(strip.background = element_blank(),strip.placement = "outside")
 ```
+
+As see above,
+
+The mean WindGustSpeed is 38.6 km/h with a standard deviation of 13.3 km/h
+
+The mean WindSpeed3pm is 17.6km/h with a standard deviation of 17.6 km/h with a standard deviation of 8.02 km/h
+
+The mean WindSpeed9am is 13.9km/h with a standard deviation of 7.62 km/h
 
 #### Investigating the Atmospheric Pressure
 
@@ -203,6 +211,8 @@ The mean temperature at 9am is 18.5 degrees C with a standard deviation of 7.09 
 
 All rows that have NA entries in any of the columns should be removed. This is to ensure data is consistent.
 
+I have decided to remove Year from my analysis. This is because if we fit the classifier with the Year variable and it is fed new data from a year that was not in the training or testing data set, the classifier would perform extremely poorly.
+
 ## Question 3
 
 #### Dividing data into training and testing data sets.
@@ -222,8 +232,6 @@ WAUS.test = WAUS[-train.row,]
 set.seed(32245181)
 #fitting to a decision tree
 decision <- tree(MHT~.-Year,data = WAUS.train)
-plot(decision)
-text(decision,pretty= 0)
 summary(decision)
 ```
 
@@ -250,21 +258,14 @@ sub <- c(sample(1:125,63),sample(126:250,63),sample(251:375,63),sample(376:500,6
 
 ```{r}
 set.seed(32245181)
-#ada bag
 bag <- bagging(MHT~.-Year,data = WAUS.train[sub,],mfinal = 100)
-plot(bag$trees[[1]]); text(bag$trees[[1]], pretty = 0)
-
-#ipred
-#bag <- bagging(formula = MHT ~. -Year, data = WAUS.train, nbagg  = 150, coob = TRUE, control = rpart.control(minsplit = 2, cp = 0))
 ```
 
 #### Fitting the training data with boosting method
 
 ```{r}
 set.seed(32245181)
-par(xpd = NA)
 boost <- boosting(MHT~.-Year,data = WAUS.train[sub,],mfinal = 100)
-plot(boost$trees[[1]]); text(boost$trees[[1]], pretty = 0) 
 ```
 
 ## Question 5
@@ -340,19 +341,15 @@ Referring to the confusion matrix above, we can see that the Boosting method cla
 
 #### Constructing the ROC curve and calculating the AUC for all classifiers
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 dec.r <- predict(decision,WAUS.test,type = 'vector')
 
 naive.r <- predict(naive,WAUS.test,type = 'raw')
 
 rand.r <- predict(rand_for,WAUS.test,type = 'prob')
-
-bag.r <- prediction(pred_bag$prob[,2], WAUS.test$MHT)
-
-boost.r <- prediction(pred_boost$prob[,2], WAUS.test$MHT)
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 roc(WAUS.test$MHT,naive.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for each classifier",col = 'blue',lwd = 2,print.auc = TRUE)
 plot.roc(WAUS.test$MHT,rand.r[,2],percent = TRUE, col = '#4daf4a',lwd = 2,print.auc = TRUE, add = TRUE,print.auc.y = 40 )
 plot.roc(WAUS.test$MHT,dec.r[,2],percent = TRUE, col = 'red', lwd =2, print.auc = TRUE, add = TRUE, print.auc.y = 30)
@@ -360,6 +357,8 @@ plot.roc(WAUS.test$MHT, pred_bag$prob[,2], percent = TRUE, col = 'purple', lwd =
 plot.roc(WAUS.test$MHT, pred_boost$prob[,2], percent = TRUE, col = '#FFC300', lwd = 2, print.auc = TRUE, add = TRUE, print.auc.y = 10)
 legend("bottomright",legend = c("Naive Bayes","Random Forest", "Decision Tree","Bagging","Boosting"), col = c("blue","#4daf4a",'red','purple','#FFC300'), lwd = 2)
 ```
+
+We can see from the ROC curve above that the Random Forest classifier has the highest AUC at 63.2%. This indicates that the Random Forest Classifier is adequate at determining if tomorrow will be humid or not.The other classifiers fall below 60%. This means that it would be better to just guess than to use the classifier to predict if tomorrow will be humid or not.
 
 ## Question 7
 
@@ -455,7 +454,7 @@ Referring to the confusion matrix above, we can see that this Decision Tree clas
 
 #### ROC and AUC for this simple classifier
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 simple.r = predict(decision_simple,WAUS.test,type = "vector")
 
 roc(WAUS.test$MHT,simple.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for Decision Tree",col = 'blue',lwd = 2,print.auc = TRUE,print.auc.y = 30)
@@ -502,13 +501,12 @@ newr_mat
 
 #### Plotting the ROC and calculating the AUC for our improved Random Forest classifier.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 newrand.r = predict(new_rand,WAUS.test,type = "prob")
 
 roc(WAUS.test$MHT,newrand.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for Improved Random Forest",col = 'darkgreen',lwd = 2,print.auc = TRUE,print.auc.y = 30)
 
 legend("bottomright",legend = c("Improved Random Forest"), col = c("darkgreen"), lwd = 2)
-
 ```
 
 Now let's compare this improved Random Forest classifier to the earlier classifiers.
@@ -527,6 +525,170 @@ To create the improved Random Forest classifier, the number of trees produced wa
 
 ## Question 11
 
+```{r message=FALSE, warning=FALSE}
+library(neuralnet)
+library(car)
+```
+
 ```{r}
+# make training and test sets
+set.seed(32245181)
+sub <- sample(2, nrow(WAUS), replace = TRUE, prob=c(0.8, 0.2))
+
+WAUS$WindDir3pm <- as.numeric(WAUS$WindDir3pm)
+WAUS$WindDir9am <- as.numeric(WAUS$WindDir9am)
+WAUS$WindGustDir <- as.numeric(WAUS$WindGustDir)
+WAUS$Location <- as.numeric(WAUS$Location)
+```
+
+Before fitting the data to an ANN, there are several things that need to be done. Firstly, we split the data set to a training and testing data set. I split the data so that 80% is used for training and 20% is used for testing.
+
+Secondly, the columns which contain non numerical values need to be converted to a numerical format. This is done by using as.numeric() on each non numeric column. Before converting to numerical, I converted the columns to the format type first (see earlier in the report : Question 1).
+
+```{r}
+# set the seed to replicate the results
+set.seed(32245181)
+WAUS.train <- WAUS[sub == 1,]
+WAUS.test <- WAUS[!sub ==1,]
+WAUS.nn <- neuralnet(MHT ~ WindDir3pm + WindDir9am + WindGustDir + Location, WAUS.train, hidden = c(2,1))
+
+plot(WAUS.nn)
+```
+
+Based on my findings earlier in the earlier questions, I used the 4 variables that were found to be the most important predictors for predicting whether it will be humid tomorrow or not.
+
+```{r}
+set.seed(32245181)
+
+#make prediction
+WAUS.pred <- compute(WAUS.nn, WAUS.test[,-ncol(WAUS.test)])
+
+WAUS.pred <- as.data.frame(round(WAUS.pred$net.result,0))
+
+
+#plotting the confusion matrix
+table(observed = WAUS.test$MHT,predicted = WAUS.pred$V1)
+```
+
+Referring to the confusion matrix above, we can see that the Artificial Network performs adequately to predict whether it will be humid tomorrow or not. It has an accuracy of 0.556 and a True Positive Rate of 0.565 and a False Positive Rate of 0.563.
+
+#### Plotting the ROC and calculating AUC for this ANN
+
+```{r message=FALSE, warning=FALSE}
+#store confidence results from the ANN
+WAUS.pred <- compute(WAUS.nn, WAUS.test[,-ncol(WAUS.test)])
+WAUS.result <- WAUS.pred$net.result
+WAUS.result <- WAUS.result[,1]
+
+#detach neuralnet package, interferes with prediction() in ROCR
+detach(package:neuralnet,unload = T)
+```
+
+```{r}
+library(ROCR)
+
+#plot the ROC curve and calculate AUC
+roc(WAUS.test$MHT,WAUS.result,plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for ANN",col = 'darkgreen',lwd = 2,print.auc = TRUE,print.auc.y = 30)
+
+legend("bottomright",legend = c("ANN"), col = c("darkgreen"), lwd = 2)
+```
+
+Now let's add the performance metrics into the overall table to compare with the earlier classifiers
+
+```{r}
+#add performance metrics to the overall
+new_ANN_data <- c(Classifier = "ANN", `True Postive Rate` = 0.565, `False Positive Rate` = 0.563, Accuracy = 0.556, AUC = 0.500)
+
+overall <- rbind(overall, new_ANN_data)
+
+overall
+```
+
+Referring to the table above, we can see that the ANN does not perform as well as the other classifiers. Overall, the ANN has the second lowest accuracy, AUC and True Positive Rate. It also has the highest false positive rate.
+
+The reason the Artificial Neural Network may not be a good classifier for predicting if tomorrow will be humid or not is because it does not understand the data that is fitted to it. For example, we can change the wind direction to numerical format where North = 1 and South = 2. The ANN does not understand that North and South are complete opposites to one another and just thinks they are both just categories.
+
+## Question 12
+
+I chose to use the "ipred" package to implement a new classifier.
+
+The "ipred" package is a Bagging method classifier.
+
+Link : <https://cran.r-project.org/web/packages/ipred/ipred.pdf>
+
+This classifier works similar to adabag but has an extra parameter to combine Stabilised Linear Discriminant Analysis with Bagging.
+
+This package performs "double bagging" where it performs the normal bagging algorithm and combines it with the Linear Discriminant Analysis which finds a linear combination of features to classify the data.
+
+```{r message=FALSE, warning=FALSE}
+library(ipred)
+
+#generating the data
+WAUS <- read.csv("HumidPredict2023D.csv")
+L <- as.data.frame(c(1:49))
+set.seed(32245181) # Your Student ID is the random seed
+L <- L[sample(nrow(L), 10, replace = FALSE),] # sample 10 locations
+WAUS <- WAUS[(WAUS$Location %in% L),]
+WAUS <- WAUS[sample(nrow(WAUS), 2000, replace = FALSE),] # sample 2000 rows
+
+#removing all NAs in the data
+WAUS <- na.omit(WAUS)
+
+#changing all categorical variables to factors
+WAUS$MHT <- as.factor(WAUS$MHT)
+WAUS$WindDir3pm <- as.factor(WAUS$WindDir3pm)
+WAUS$WindDir9am <- as.factor(WAUS$WindDir9am)
+WAUS$WindGustDir <- as.factor(WAUS$WindGustDir)
+WAUS$RainToday <- as.factor(WAUS$RainToday)
+WAUS$Location <- as.factor(WAUS$Location)
+
+set.seed(32245181) #Student ID as random seed 
+train.row = sample(1:nrow(WAUS), 0.7*nrow(WAUS))
+WAUS.train = WAUS[train.row,]
+WAUS.test = WAUS[-train.row,]
+```
+
+#### Fitting the training data to the Bagging classifier with SLDA (Stabilized Linear Discriminant Learning)
+
+```{r}
+set.seed(32245181)
+
+comb.lda <- list(list(model=slda, predict=function(obj, newdata)
+                                 predict(obj, newdata)$x))
+
+bag.new <- bagging(formula = MHT ~ . - Year - RainToday,data = WAUS.train, nbag = 300, control = rpart.control(minsplit = 3, cp = 0.002), comb = comb.lda)
 
 ```
+
+#### Performing predictions
+
+```{r}
+bag.r <- predict(bag.new, newdata=WAUS.test)
+
+table(observed = WAUS.test$MHT, predicted = bag.r)
+```
+
+Referring to the confusion matrix above, we can see that the accuracy for this Bagging classifier is 0.610 with a True Positive Rate of 0.632 and a False Positive Rate of 0.421.
+
+#### Plotting the ROC and calculating the AUC for this Bagging classifier.
+
+```{r}
+bag.r <- predict(bag.new, newdata=WAUS.test, type = 'prob')
+
+roc(WAUS.test$MHT,bag.r[,2],plot = TRUE,legacy.axes = TRUE, percent = TRUE, xlab = 'False Positive Percentage',ylab= 'True Positive Percentage', main = "ROC and AUC for ipred Bagging",col = 'darkgreen',lwd = 2,print.auc = TRUE,print.auc.y = 30)
+
+legend("bottomright",legend = c("Ipred Bagging Classifier"), col = c("darkgreen"), lwd = 2)
+```
+
+Lastly, let's compare the performance metrics for this classifier with the earlier classifiers
+
+```{r}
+#add performance metrics to the overall
+new_bag_data <- c(Classifier = "Bagging - new", `True Postive Rate` = 0.632, `False Positive Rate` = 0.421, Accuracy = 0.610, AUC = 0.619)
+
+overall <- rbind(overall, new_bag_data)
+
+overall
+```
+
+Referring to the table above, we can see that the new Bagging classifier does not outperform the improved Random Forest classifier. The improved Random Forest classifier has a higher accuracy and AUC. However, it does perform better than the earlier Bagging classifier which used the "adabag" package.
